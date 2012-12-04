@@ -351,8 +351,8 @@ logical           :: show_open_namelist_file_warning = .false.
 
 integer            :: pack_size  ! = 1 for double = 2 for float
 
-character(len=128) :: version = '$Id: fms_io.F90,v 19.0 2012/01/06 21:57:15 fms Exp $'
-character(len=128) :: tagname = '$Name: siena_201202 $'
+character(len=128) :: version = '$Id: fms_io.F90,v 19.0.8.1 2012/12/14 17:08:04 Seth.Underwood Exp $'
+character(len=128) :: tagname = '$Name: siena_201202_ensemble_fix_sdu $'
 
 contains
 
@@ -4819,9 +4819,33 @@ end subroutine get_axis_cart
     endif    
 
     !Perhaps the file has an ensemble instance appendix
-    call get_instance_filename(actual_file, actual_file)
-    inquire (file=trim(actual_file)//trim(pe_name), exist=fexist)  
-    if(.not. fexist) inquire (file=trim(actual_file)//'.nc'//trim(pe_name), exist=fexist)     
+    call get_instance_filename(orig_file, actual_file)
+    if(index(orig_file, '.nc', back=.true.) == 0) then
+       inquire (file=trim(actual_file), exist=fexist)
+       if(fexist) then
+          get_file_name = .true.
+          return
+       endif
+    endif 
+
+    call get_mosaic_tile_file(actual_file, actual_file, is_no_domain, domain, tile_count)
+    !--- check if the file is group redistribution.
+    if(ASSOCIATED(d_ptr)) then
+       io_domain => mpp_get_io_domain(d_ptr)
+       if(associated(io_domain)) then
+          tile_id = mpp_get_tile_id(io_domain)       
+          if(mpp_npes()>10000) then
+             write(fname, '(a,i6.6)' ) trim(actual_file)//'.', tile_id(1)
+          else
+             write(fname, '(a,i4.4)' ) trim(actual_file)//'.', tile_id(1)
+          endif
+          inquire (file=trim(fname), exist=fexist)
+          if(fexist) io_domain_exist = .true.
+       endif   
+       io_domain=>NULL()
+    endif 
+
+    if(.not. fexist) inquire (file=trim(actual_file)//trim(pe_name), exist=fexist)  
     if(fexist) then
        read_dist = .true. 
        d_ptr => NULL()
@@ -4829,7 +4853,6 @@ end subroutine get_axis_cart
        return
     endif    
     inquire (file=trim(actual_file), exist=fexist)
-          if(.not. fexist) inquire (file=trim(actual_file)//'.nc', exist=fexist)
     
     if(fexist) then
        d_ptr => NULL()
