@@ -80,7 +80,7 @@ End slopes
      d[0] = 0.0;
   }
   else {
-     if ( delta[0]*delta[1] < 0.0 && abs(d[0]) > abs(3.0*delta[0])) { /* gbw, int abs(int) eval of double can be explicit. second pass*/
+    if ( delta[0]*delta[1] < 0.0 && fabs(d[0]) > fabs(3.0*delta[0])) { /* gbw, was previously implicit int cast via int abs(int) */
         d[0]=3.0*delta[0];
      }
   }
@@ -90,7 +90,7 @@ End slopes
      d[kmax] = 0.0;
   }
   else {
-     if ( delta[kmax-1]*delta[kmax-2] < 0.0 && abs(d[kmax]) > abs(3.0*delta[kmax-1])) { /* gbw, int abs(int) eval of double can be explicit. second pass*/
+     if ( delta[kmax-1]*delta[kmax-2] < 0.0 && fabs(d[kmax]) > fabs(3.0*delta[kmax-1])) { /* gbw, was previously implicit int cast via int abs(int) */
         d[kmax]=3.0*delta[kmax-1];
      }
   }
@@ -358,17 +358,17 @@ void linear_vertical_interp(int nx, int ny, int nk1, int nk2, const double *grid
     if (grid1[n] < grid2[k]) {
       w = (grid2[k]-grid1[n])/(grid1[n+1]-grid1[n]);
       for(l=0; l<nx*ny; l++) {
-	data2[k*nx*ny+l] = (1.-w)*data1[n*nx*ny+l] + w*data1[(n+1)*nx*ny+l];
+	    data2[k*nx*ny+l] = (1.-w)*data1[n*nx*ny+l] + w*data1[(n+1)*nx*ny+l];
       }
     }
     else {
       if(n==0)
-	for(l=0;l<nx*ny;l++) data2[k*nx*ny+l] = data1[n*nx*ny+l];
+	     for(l=0;l<nx*ny;l++) data2[k*nx*ny+l] = data1[n*nx*ny+l];
       else {
-	w = (grid2[k]-grid1[n-1])/(grid1[n]-grid1[n-1]);
-	for(l=0; l<nx*ny; l++) {
-	  data2[k*nx*ny+l] = (1.-w)*data1[(n-1)*nx*ny+l] + w*data1[n*nx*ny+l];
-	}
+        w = (grid2[k]-grid1[n-1])/(grid1[n]-grid1[n-1]);
+        for(l=0; l<nx*ny; l++) {
+	      data2[k*nx*ny+l] = (1.-w)*data1[(n-1)*nx*ny+l] + w*data1[n*nx*ny+l];
+        }
       }
     }
   }

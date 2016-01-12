@@ -1,7 +1,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
-/* #include <tgmath.h> /\* gbw, this overloads type-generic macros for math functions, eg sqrt. second pass *\/ */
 #include <string.h>
 #ifdef use_libMPI 
 #include <mpi.h>
@@ -273,7 +272,7 @@ double poly_area_dimensionless(const double x[], const double y[], int n)
     lat2 = y[i];
     if(dx > M_PI)  dx = dx - 2.0*M_PI;
     if(dx < -M_PI) dx = dx + 2.0*M_PI;
-    if (dx==0.0) continue; /* gbw, we might want to be more explicit with this test... second pass. */
+    if (dx==0.0) continue; /* gbw, we might want to be more explicit with this test... perhaps later pass. */
     
     if ( fabs(lat1-lat2) < SMALL_VALUE) /* cheap area calculation along latitude */
       area -= dx*sin(0.5*(lat1+lat2));
@@ -702,9 +701,9 @@ int intersect_tri_with_line(const double *plane, const double *l1, const double 
   mult(inv_M, V, X);
 
   /* Get answer out */ 
-  *t=X[0];   			/* gbw, these have trecherous implicit fp cast. second pass */
-  p[0]=X[1];                    /* gbw, these have trecherous implicit fp cast. second pass */
-  p[1]=X[2];                    /* gbw, these have trecherous implicit fp cast. second pass */
+  *t=((double)X[0]);     /* gbw, made long double to double cast explicit */   			
+  p[0]=((double)X[1]);   /* gbw, made long double to double cast explicit */
+  p[1]=((double)X[2]);   /* gbw, made long double to double cast explicit */
 
   return 1;
 }

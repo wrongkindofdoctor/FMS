@@ -50,7 +50,8 @@ void get_file_dir(const char *file, char *dir)
 
 int field_exist(const char* file, const char *name)
 {
-  int ncid, varid, status, existed;
+  int ncid, varid, status;
+  int existed = 0;
   char msg[512];  
 #ifdef use_netCDF
   status = nc_open(file, NC_NOWRITE, &ncid);
@@ -59,22 +60,21 @@ int field_exist(const char* file, const char *name)
     handle_netcdf_error(msg, status);
   }
   status = nc_inq_varid(ncid, name, &varid);  
-  if(status == NC_NOERR)
+  if(status == NC_NOERR){
     existed = 1;
-  else
-    existed = 0;
-    
+  }
+
   status = nc_close(ncid);
   if(status != NC_NOERR) {
     sprintf(msg, "field_exist: in closing file %s.", file);
     handle_netcdf_error(msg, status);
   }
 
-  return existed;
 #else
   error_handler("read_mosaic: Add flag -Duse_netCDF when compiling");
-  return 0; 
 #endif
+
+  return existed;
 } /* field_exist */
 
 int get_dimlen(const char* file, const char *name)

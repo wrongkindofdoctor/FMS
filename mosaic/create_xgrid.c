@@ -1757,15 +1757,15 @@ double poly_ctrlon(const double x[], const double y[], int n, double clon)
     if( dphi2 > M_PI) dphi2 -= 2.0*M_PI;
     if( dphi2 <-M_PI) dphi2 += 2.0*M_PI;    
 
-    if(abs(dphi2 -dphi1) < M_PI) {
-      ctrlon -= dphi * (dphi1*f1+dphi2*f2)/2.0; /* gbw, make this cast explicit. second pass */
+    if(fabs(dphi2 -dphi1) < M_PI) {  /* gbw, this was previously implicit int cast caused by int abs(int) */
+      ctrlon -= dphi * (dphi1*f1+dphi2*f2)/2.0;
     }
     else {
       if(dphi1 > 0.0)
 	fac = M_PI;
       else
 	fac = -M_PI;
-      fint = f1 + (f2-f1)*(fac-dphi1)/abs(dphi); /* gbw, make this cast explicit. second pass */
+      fint = f1 + (f2-f1)*(fac-dphi1)/fabs(dphi);  /* gbw, this was previously implicit int cast caused by int abs(int) */
       ctrlon -= 0.5*dphi1*(dphi1-fac)*f1 - 0.5*dphi2*(dphi2+fac)*f2
 	+ 0.5*fac*(dphi1+dphi2)*fint;
 	}
@@ -1825,15 +1825,15 @@ double box_ctrlon(double ll_lon, double ll_lat, double ur_lon, double ur_lat, do
     if( dphi2 > M_PI) dphi2 -= 2.0*M_PI;
     if( dphi2 <-M_PI) dphi2 += 2.0*M_PI;    
 
-    if(abs(dphi2 -dphi1) < M_PI) {
-      ctrlon -= dphi * (dphi1*f1+dphi2*f2)/2.0; /* gbw, make this cast explicit. second pass */
+    if(fabs(dphi2 -dphi1) < M_PI) { /* gbw, this was previously implicit int cast caused by int abs(int) */
+      ctrlon -= dphi * (dphi1*f1+dphi2*f2)/2.0; 
     }
     else {
       if(dphi1 > 0.0)
 	fac = M_PI;
       else
 	fac = -M_PI;
-      fint = f1 + (f2-f1)*(fac-dphi1)/abs(dphi); /* gbw, make this cast explicit. second pass */
+      fint = f1 + (f2-f1)*(fac-dphi1)/fabs(dphi); /* gbw, this was previously implicit int cast caused by int abs(int) */
       ctrlon -= 0.5*dphi1*(dphi1-fac)*f1 - 0.5*dphi2*(dphi2+fac)*f2
 	+ 0.5*fac*(dphi1+dphi2)*fint;
     }
