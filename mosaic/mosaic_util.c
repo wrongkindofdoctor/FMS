@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
+/* #include <tgmath.h> /\* gbw, this overloads type-generic macros for math functions, eg sqrt. second pass *\/ */
 #include <string.h>
 #ifdef use_libMPI 
 #include <mpi.h>
@@ -42,7 +43,7 @@ void error_handler(const char *msg)
 #else
   exit(1);
 #endif  
-}; /* error_handler */
+} /* error_handler */
 
 /*********************************************************************
 
@@ -87,15 +88,16 @@ int nearest_index(double value, const double *array, int ia)
     }
   return index;
 
-};
+}
 
 /******************************************************************/
 
 void tokenize(const char * const string, const char *tokens, unsigned int varlen,
 	      unsigned int maxvar, char * pstring, unsigned int * const nstr)
 {
-  size_t i, j, nvar, len, ntoken;
-  int found, n;
+  size_t i, j, len, ntoken, n;
+  unsigned int nvar;
+  int found;
   
   nvar = 0; j = 0;
   len = strlen(string);
@@ -147,7 +149,7 @@ double maxval_double(int size, const double *data)
 
   return maxval;
   
-}; /* maxval_double */
+} /* maxval_double */
 
 
 /*******************************************************************************
@@ -166,7 +168,7 @@ double minval_double(int size, const double *data)
 
   return minval;
   
-}; /* minval_double */
+} /* minval_double */
 
 /*******************************************************************************
   double avgval_double(int size, double *data)
@@ -183,7 +185,7 @@ double avgval_double(int size, const double *data)
   
   return avgval;
   
-}; /* avgval_double */
+} /* avgval_double */
 
 
 /*******************************************************************************
@@ -210,7 +212,7 @@ void xyz2latlon( int np, const double *x, const double *y, const double *z, doub
 {
 
   double xx, yy, zz;
-  double dist, sinp;
+  double dist;
   int i;
 
   for(i=0; i<np; i++) {
@@ -240,14 +242,13 @@ void xyz2latlon( int np, const double *x, const double *y, const double *z, doub
 double box_area(double ll_lon, double ll_lat, double ur_lon, double ur_lat)
 {
   double dx = ur_lon-ll_lon;
-  double area;
   
   if(dx > M_PI)  dx = dx - 2.0*M_PI;
   if(dx < -M_PI) dx = dx + 2.0*M_PI;
 
   return (dx*(sin(ur_lat)-sin(ll_lat))*RADIUS*RADIUS ) ;
   
-}; /* box_area */
+} /* box_area */
 
 
 /*------------------------------------------------------------------------------
@@ -272,7 +273,7 @@ double poly_area_dimensionless(const double x[], const double y[], int n)
     lat2 = y[i];
     if(dx > M_PI)  dx = dx - 2.0*M_PI;
     if(dx < -M_PI) dx = dx + 2.0*M_PI;
-    if (dx==0.0) continue;
+    if (dx==0.0) continue; /* gbw, we might want to be more explicit with this test... second pass. */
     
     if ( fabs(lat1-lat2) < SMALL_VALUE) /* cheap area calculation along latitude */
       area -= dx*sin(0.5*(lat1+lat2));
@@ -292,7 +293,7 @@ double poly_area_dimensionless(const double x[], const double y[], int n)
   else
     return (area/(4*M_PI));
 
-}; /* poly_area */
+} /* poly_area */
 
 double poly_area(const double x[], const double y[], int n)
 {
@@ -329,7 +330,7 @@ double poly_area(const double x[], const double y[], int n)
   else  
      return area*RADIUS*RADIUS;
 
-}; /* poly_area */
+} /* poly_area */
 
 double poly_area_no_adjust(const double x[], const double y[], int n)
 {
@@ -354,7 +355,7 @@ double poly_area_no_adjust(const double x[], const double y[], int n)
      return area*RADIUS*RADIUS;
   else
      return area*RADIUS*RADIUS;
-}; /* poly_area_no_adjust */
+} /* poly_area_no_adjust */
 
 int delete_vtx(double x[], double y[], int n, int n_del)
 {
@@ -380,7 +381,7 @@ int insert_vtx(double x[], double y[], int n, int n_ins, double lon_in, double l
   return (n+1);
 } /* insert_vtx */
 
-void v_print(double x[], double y[], int n)
+static void v_print(double x[], double y[], int n)
 {
   int i;
 
@@ -422,11 +423,11 @@ int fix_lon(double x[], double y[], int n, double tlon)
 
   if (nn) x_sum = x[0]; else return(0);
   for (i=1;i<nn;i++) {
-    double dx = x[i]-x[i-1];
+    double dx_ = x[i]-x[i-1]; 	/* explicitly scoped dx by declaring token (dx_) different from parent's dx */
 
-    if      (dx < -M_PI) dx = dx + TPI;
-    else if (dx >  M_PI) dx = dx - TPI;
-    x_sum += (x[i] = x[i-1] + dx);
+    if      (dx_ < -M_PI) dx_ = dx_ + TPI;
+    else if (dx_ >  M_PI) dx_ = dx_ - TPI;
+    x_sum += (x[i] = x[i-1] + dx_);
   }
 
   dx = (x_sum/nn)-tlon;
@@ -461,7 +462,7 @@ double great_circle_distance(double *p1, double *p2)
   dist = RADIUS*beta;
   return dist;
 
-}; /* great_circle_distance */
+} /* great_circle_distance */
 
 
 /* Compute the great circle area of a polygon on a sphere */
@@ -524,7 +525,7 @@ double spherical_angle(const double *v1, const double *v2, const double *v3)
   if ( ddd <= 0.0 ) 
     angle = 0. ;
   else {
-    ddd = (px*qx+py*qy+pz*qz) / sqrt(ddd);
+    ddd = (px*qx+py*qy+pz*qz) / sqrt(ddd); /* gbw, trecherous fp op here, second pass */
     if( fabs(ddd-1) < EPSLN30 ) ddd = 1;
     if( fabs(ddd+1) < EPSLN30 ) ddd = -1;
     if ( ddd>1. || ddd<-1. ) {
@@ -539,7 +540,7 @@ double spherical_angle(const double *v1, const double *v2, const double *v3)
   }
   
   return angle;
-}; /* spherical_angle */
+} /* spherical_angle */
 
 /*------------------------------------------------------------------------------
   double spherical_excess_area(p_lL, p_uL, p_lR, p_uR) 
@@ -581,7 +582,7 @@ double spherical_excess_area(const double* p_ll, const double* p_ul,
 
   return area;
   
-}; /* spherical_excess_area */
+} /* spherical_excess_area */
 
 
 /*----------------------------------------------------------------------
@@ -596,7 +597,7 @@ void vect_cross(const double *p1, const double *p2, double *e )
   e[1] = p1[2]*p2[0] - p1[0]*p2[2];
   e[2] = p1[0]*p2[1] - p1[1]*p2[0];
 
-}; /* vect_cross */
+} /* vect_cross */
 
 
 /*----------------------------------------------------------------------
@@ -629,7 +630,7 @@ void normalize_vect(double *e)
   pdot = sqrt( pdot ); 
 
   for(k=0; k<3; k++) e[k] /= pdot;
-};
+}
 
 
 /*------------------------------------------------------------------
@@ -657,7 +658,7 @@ void unit_vect_latlon(int size, const double *lon, const double *lat, double *vl
     vlat[3*n+1] = -sin_lat*sin_lon;
     vlat[3*n+2] =  cos_lat;
   }
-}; /* unit_vect_latlon */
+} /* unit_vect_latlon */
 
 
 /* Intersect a line and a plane
@@ -700,10 +701,10 @@ int intersect_tri_with_line(const double *plane, const double *l1, const double 
   /* Calculate solution */
   mult(inv_M, V, X);
 
-  /* Get answer out */
-  *t=X[0];
-  p[0]=X[1];
-  p[1]=X[2];
+  /* Get answer out */ 
+  *t=X[0];   			/* gbw, these have trecherous implicit fp cast. second pass */
+  p[0]=X[1];                    /* gbw, these have trecherous implicit fp cast. second pass */
+  p[1]=X[2];                    /* gbw, these have trecherous implicit fp cast. second pass */
 
   return 1;
 }
@@ -1202,7 +1203,6 @@ void setInbound(struct Node *interList, struct Node *list)
 
   struct Node *temp1=NULL, *temp=NULL;
   struct Node *temp1_prev=NULL, *temp1_next=NULL;
-  int prev_is_inside, next_is_inside;
 
   /* for each point in interList, search through list to decide the inbound value the interList point */
   /* For each inbound point, the prev node should be outside and the next is inside. */
@@ -1249,7 +1249,7 @@ int isInside(struct Node *node) {
 /* check if node is inside polygon list or not */
  int insidePolygon( struct Node *node, struct Node *list)
 {
-  int i, ip, is_inside;
+  int is_inside;
   double pnt0[3], pnt1[3], pnt2[3];
   double anglesum;
   struct Node *p1=NULL, *p2=NULL;  

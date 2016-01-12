@@ -32,9 +32,9 @@
 void cubic_spline_sp(int size1, int size2, const double *grid1, const double *grid2, const double *data1,
                   double *data2 )
 {
-  double *delta=NULL, *d=NULL, *dh=NULL, *b=NULL, *c = NULL;
-  double h, h2, s, w1, w2, p;
-  int i, k, n, klo, khi, kmax;
+  double *delta=NULL, *d=NULL, *dh=NULL, *b=NULL, *c=NULL;
+  double s, w1, w2, p;
+  int i, k, n, klo, kmax;
 
   for(i=1; i<size1; i++) {
     if( grid1[i] <= grid1[i-1] ) error_handler("cubic_spline_sp: grid1 is not monotonic increasing");
@@ -80,7 +80,7 @@ End slopes
      d[0] = 0.0;
   }
   else {
-     if ( delta[0]*delta[1] < 0.0 && abs(d[0]) > abs(3.0*delta[0])) {
+     if ( delta[0]*delta[1] < 0.0 && abs(d[0]) > abs(3.0*delta[0])) { /* gbw, int abs(int) eval of double can be explicit. second pass*/
         d[0]=3.0*delta[0];
      }
   }
@@ -90,7 +90,7 @@ End slopes
      d[kmax] = 0.0;
   }
   else {
-     if ( delta[kmax-1]*delta[kmax-2] < 0.0 && abs(d[kmax]) > abs(3.0*delta[kmax-1])) {
+     if ( delta[kmax-1]*delta[kmax-2] < 0.0 && abs(d[kmax]) > abs(3.0*delta[kmax-1])) { /* gbw, int abs(int) eval of double can be explicit. second pass*/
         d[kmax]=3.0*delta[kmax-1];
      }
   }
@@ -99,8 +99,6 @@ End slopes
   b = (double *)malloc((size1-1)*sizeof(double));
   c = (double *)malloc((size1-1)*sizeof(double));
   for (k=0; k<size1-1; k++) {
-    h   = dh[k];
-    h2  = h*h;
     c[k]   = (3.0*delta[k]-2.0*d[k]-d[k+1])/dh[k];
     b[k]   = (d[k]-2.0*delta[k]+d[k+1])/(dh[k]*dh[k]);
   }
@@ -118,7 +116,6 @@ End slopes
 	klo = n -1;
       }
     }
-    khi = klo+1;
     s   = grid2[k] - grid1[klo];
     data2[k] = data1[klo]+s*(d[klo]+s*(c[klo]+s*b[klo]));
   }
@@ -129,7 +126,7 @@ End slopes
   free(dh);
   free(delta);
 
-};/* cubic spline sp */
+}/* cubic spline sp */
 
 
 /*********************************************************************
@@ -234,7 +231,7 @@ void cubic_spline(int size1, int size2, const double *grid1, const double *grid2
   free(y2);
   free(u);
   
-};/* cubic spline */
+}/* cubic spline */
 
 
 /*------------------------------------------------------------------------------
@@ -284,7 +281,7 @@ void conserve_interp(int nx_src, int ny_src, int nx_dst, int ny_dst, const doubl
   free(dst_area);
   free(area_frac);
   
-}; /* conserve_interp */
+} /* conserve_interp */
 
 /*------------------------------------------------------------------------------
   void conserve_interp_great_circle()
@@ -336,14 +333,14 @@ void conserve_interp_great_circle(int nx_src, int ny_src, int nx_dst, int ny_dst
   free(dst_area);
   free(area_frac);
   
-}; /* conserve_interp_great_circle */
+} /* conserve_interp_great_circle */
 
 
 
 void linear_vertical_interp(int nx, int ny, int nk1, int nk2, const double *grid1, const double *grid2,
 			    double *data1, double *data2) 
 {
-  int n1, n2, i, n, k, l;
+  int n, k, l;
   double w;
 
   for(k=1; k<nk1; k++) {

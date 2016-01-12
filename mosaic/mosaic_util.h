@@ -25,7 +25,6 @@ struct Node{
   struct Node *Next;
 };
 
-
 void error_handler(const char *msg);
 int nearest_index(double value, const double *array, int ia);
 int lon_fix(double *x, double *y, int n_in, double tlon);
@@ -38,6 +37,8 @@ double box_area(double ll_lon, double ll_lat, double ur_lon, double ur_lat);
 double poly_area(const double lon[], const double lat[], int n);
 double poly_area_dimensionless(const double lon[], const double lat[], int n);
 double poly_area_no_adjust(const double x[], const double y[], int n);
+int delete_vtx(double x[], double y[], int n, int n_del);
+int insert_vtx(double x[], double y[], int n, int n_ins, double lon_in, double lat_in);
 int fix_lon(double lon[], double lat[], int n, double tlon);
 void tokenize(const char * const string, const char *tokens, unsigned int varlen,
 	      unsigned int maxvar, char * pstring, unsigned int * const nstr);
@@ -74,6 +75,8 @@ struct Node *getNextNode(struct Node *list);
 void copyNode(struct Node *node_out, struct Node node_in);
 void printNode(struct Node *list, char *str);
 int intersectInList(struct Node *list, double x, double y, double z);
+void insertIntersect(struct Node *list, double x, double y, double z, double u1, double u2, int inbound,
+		     double x2, double y2, double z2);
 void insertAfter(struct Node *list, double x, double y, double z, int intersect, double u, int inbound,
 		 double x2, double y2, double z2);
 double gridArea(struct Node *grid);
@@ -88,5 +91,9 @@ void setInbound(struct Node *interList, struct Node *list);
 int isInside(struct Node *node);
 void set_reproduce_siena_true(void);
 
+#ifndef __AIX
+void set_reproduce_siena_true_(void);
+int inside_a_polygon_(double *lon1, double *lat1, int *npts, double *lon2, double *lat2);
+#endif
 
 #endif
