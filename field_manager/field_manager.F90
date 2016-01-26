@@ -4,7 +4,7 @@ module field_manager_mod
 #endif
 
 #ifndef MAXFIELDMETHODS_
-#define MAXFIELDMETHODS_ 150
+#define MAXFIELDMETHODS_ 400
 #endif
 
 !
