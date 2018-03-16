@@ -1,22 +1,21 @@
-! ----------------------------------------------------------------
-!                   GNU General Public License
-! This file is a part of MOM.
-
-! MOM is free software; you can redistribute it and/or modify it and
-! are expected to follow the terms of the GNU General Public License
-! as published by the Free Software Foundation; either version 2 of
-! the License, or (at your option) any later version.
-
-! MOM is distributed in the hope that it will be useful, but WITHOUT
-! ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
-! or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public
-! License for more details.
-
-! For the full text of the GNU General Public License,
-! write to: Free Software Foundation, Inc.,
-!           675 Mass Ave, Cambridge, MA 02139, USA.
-! or see:   http://www.gnu.org/licenses/gpl.html
-!-----------------------------------------------------------------------
+!***********************************************************************
+!*                   GNU Lesser General Public License
+!*
+!* This file is part of the GFDL Flexible Modeling System (FMS).
+!*
+!* FMS is free software: you can redistribute it and/or modify it under
+!* the terms of the GNU Lesser General Public License as published by
+!* the Free Software Foundation, either version 3 of the License, or (at
+!* your option) any later version.
+!*
+!* FMS is distributed in the hope that it will be useful, but WITHOUT
+!* ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+!* FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+!* for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with FMS.  If not, see <http://www.gnu.org/licenses/>.
+!***********************************************************************
 
 !> \author Richard Slater <Richard.Slater@noaa.gov>
 !! \author John Dunne <John.Dunne@noaa.gov>
@@ -73,6 +72,7 @@ module  atmos_ocean_fluxes_mod
 !!   </tr>
 !! </table>
 use mpp_mod,           only: stdout, stdlog, mpp_error, FATAL, mpp_sum, mpp_npes
+use mpp_mod,           only: mpp_pe,mpp_root_pe
 use fms_mod,           only: write_version_number
 
 use coupler_types_mod, only: coupler_1d_bc_type
@@ -80,7 +80,8 @@ use coupler_types_mod, only: ind_alpha, ind_csurf, ind_sc_no
 use coupler_types_mod, only: ind_pcair, ind_u10, ind_psurf
 use coupler_types_mod, only: ind_deposition
 use coupler_types_mod, only: ind_runoff
-use coupler_types_mod, only: ind_flux, ind_deltap, ind_kw
+use coupler_types_mod, only: ind_flux, ind_deltap, ind_kw!, ind_flux0
+use constants_mod,     only: WTMAIR,rdgas
 
 use field_manager_mod, only: fm_path_name_len, fm_string_len, fm_exists, fm_get_index
 use field_manager_mod, only: fm_new_list, fm_get_current_list, fm_change_list
@@ -764,7 +765,7 @@ end subroutine  atmos_ocean_fluxes_init
 !! \throw FATAL, "Bad parameter ([gas_fluxes%bc(n)%param(1)]) for land_sea_runoff for [name]"
 !! \throw FATAL, "Unknown flux type ([flux_type]) for [name]"
 subroutine atmos_ocean_fluxes_calc(gas_fields_atm, gas_fields_ice, &
-                                   gas_fluxes, seawater)
+                                   gas_fluxes, seawater, tsurf)
   type(coupler_1d_bc_type), intent(in)    :: gas_fields_atm !< Structure containing atmospheric surface
                                                         !! variables that are used in the calculation
                                                         !! of the atmosphere-ocean gas fluxes.
@@ -775,6 +776,7 @@ subroutine atmos_ocean_fluxes_calc(gas_fields_atm, gas_fields_ice, &
                                                         !! the atmosphere and the ocean and parameters
                                                         !! related to the calculation of these fluxes.
   real, dimension(:),       intent(in)    :: seawater   !< 1 for the open water category, 0 if ice or land.
+  real, dimension(:),       intent(in)    :: tsurf
 
   character(len=64), parameter    :: sub_name = 'atmos_ocean_fluxes_calc'
   character(len=256), parameter   :: error_header = &
@@ -820,7 +822,7 @@ subroutine atmos_ocean_fluxes_calc(gas_fields_atm, gas_fields_ice, &
         if (gas_fluxes%bc(n)%implementation .eq. 'ocmip2') then
           do i = 1, length
             if (seawater(i) == 1.) then
-              gas_fluxes%bc(n)%field(ind_kw)%values(i) = gas_fluxes%bc(n)%param(1) * gas_fields_atm%bc(n)%field(ind_u10)%values(i)**2
+               gas_fluxes%bc(n)%field(ind_kw)%values(i) = gas_fluxes%bc(n)%param(1) * gas_fields_atm%bc(n)%field(ind_u10)%values(i)**2
               cair(i) = &
                    gas_fields_ice%bc(n)%field(ind_alpha)%values(i) * &
                    gas_fields_atm%bc(n)%field(ind_pCair)%values(i) * &
@@ -833,6 +835,33 @@ subroutine atmos_ocean_fluxes_calc(gas_fields_atm, gas_fields_ice, &
             else
               gas_fluxes%bc(n)%field(ind_kw)%values(i) = 0.0
               gas_fluxes%bc(n)%field(ind_flux)%values(i) = 0.0
+              gas_fluxes%bc(n)%field(ind_deltap)%values(i) = 0.0
+              cair(i) = 0.0
+            endif
+          enddo  ! i
+
+        elseif (gas_fluxes%bc(n)%implementation .eq. 'duce_vmr') then
+           
+          do i = 1, length
+            if (seawater(i) == 1.) then
+
+               gas_fluxes%bc(n)%field(ind_kw)%values(i) = &
+                    gas_fields_atm%bc(n)%field(ind_u10)%values(i)/(770.+45.*gas_fields_atm%bc(n)%mol_wt**(1./3.)) * &
+                    101325./(rdgas*wtmair*1e-3*tsurf(i)*gas_fields_ice%bc(n)%field(ind_alpha)%values(i))
+!alpha: mol/m3/atm
+              cair(i) = &
+                   gas_fields_ice%bc(n)%field(ind_alpha)%values(i) * &
+                   gas_fields_atm%bc(n)%field(ind_pCair)%values(i) * &
+                   gas_fields_atm%bc(n)%field(ind_psurf)%values(i) * 9.86923e-6
+              cair(i) = max(cair(i),0.)
+              gas_fluxes%bc(n)%field(ind_flux)%values(i) = gas_fluxes%bc(n)%field(ind_kw)%values(i)  * (max(gas_fields_ice%bc(n)%field(ind_csurf)%values(i),0.) - cair(i))
+!              gas_fluxes%bc(n)%field(ind_flux0)%values(i) = gas_fluxes%bc(n)%field(ind_kw)%values(i) * max(gas_fields_ice%bc(n)%field(ind_csurf)%values(i),0.)
+              gas_fluxes%bc(n)%field(ind_deltap)%values(i) = (max(gas_fields_ice%bc(n)%field(ind_csurf)%values(i),0.) - cair(i)) / &
+                   (gas_fields_ice%bc(n)%field(ind_alpha)%values(i) * permeg + epsln)
+            else
+              gas_fluxes%bc(n)%field(ind_kw)%values(i) = 0.0
+              gas_fluxes%bc(n)%field(ind_flux)%values(i) = 0.0
+!              gas_fluxes%bc(n)%field(ind_flux0)%values(i) = 0.0
               gas_fluxes%bc(n)%field(ind_deltap)%values(i) = 0.0
               cair(i) = 0.0
             endif
@@ -944,7 +973,7 @@ subroutine atmos_ocean_fluxes_calc(gas_fields_atm, gas_fields_ice, &
     deallocate(kw)
     deallocate(cair)
   endif
-
+    
 end subroutine  atmos_ocean_fluxes_calc
 
 !> \brief atmos_ocean_dep_fluxes_calc
