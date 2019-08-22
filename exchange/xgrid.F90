@@ -160,7 +160,8 @@ use stock_constants_mod, only: ISTOCK_TOP, ISTOCK_BOTTOM, ISTOCK_SIDE, STOCK_NAM
 use gradient_mod,        only: gradient_cubic
 use fms2_io_mod,         only: FmsNetcdfFile_t, open_file, variable_exists, close_file
 use fms2_io_mod,         only: FmsNetcdfDomainFile_t, read_data, get_dimension_size
-use fms2_io_mod,         only: get_variable_units
+use fms2_io_mod,         only: get_variable_units, get_variable_dimension_names
+use fms2_io_mod,         only: get_variable_num_dimensions
 
 implicit none
 private
@@ -1377,8 +1378,11 @@ subroutine get_grid_version2(grid, grid_id, grid_file)
   real, dimension(grid%jm) :: latb
   real, allocatable        :: tmpx(:,:), tmpy(:,:)
   real                     :: d2r
-  integer                  :: is, ie, js, je, nlon, nlat, i, j
+  integer                  :: is, ie, js, je, nlon, nlat, i, j, n
   integer                  :: start(4), nread(4), isc2, iec2, jsc2, jec2
+  integer                  :: ndims_x, ndims_y
+  integer, dimension(:), allocatable :: dimsizes_x, dimsizes_y
+  character(len=32), dimension(:), allocatable :: dimnames_x, dimnames_y
   type(FmsNetcdfFile_t) :: fileobj
 
   if(.not. open_file(fileobj, grid_file, 'read') ) then
@@ -1389,8 +1393,35 @@ subroutine get_grid_version2(grid, grid_id, grid_file)
 
   call mpp_get_compute_domain(grid%domain, is, ie, js, je)
 
-  call get_dimension_size(fileobj, "nx", nlon)
-  call get_dimension_size(fileobj, "ny", nlat)
+  call get_dimension_size(fileobj, 'nx', nlon)
+  call get_dimension_size(fileobj, 'ny', nlat)
+
+  ! get the dimension names and sizes of the x and y data to be read in
+  ndims_x = get_variable_num_dimensions(fileobj, 'x')
+  if (ndims_x .NE. 2) call error_mesg('xgrid_mod', &
+       'input variable "x" in file '//trim(grid_file)//' does not have 2 dimensions', FATAL)
+  allocate(dimnames_x(ndims_x))
+  call get_variable_dimension_names(fileobj, 'x', dimnames_x)
+  allocate(dimsizes_x(ndims_x))
+  do n = 1,ndims_x
+     call get_dimension_size(fileobj,dimnames_x(n),dimsizes_x(n))
+  enddo 
+
+  ndims_y = get_variable_num_dimensions(fileobj, 'y')
+  if (ndims_y .NE. 2) call error_mesg('xgrid_mod', &
+       'input variable "y" in file '//trim(grid_file)//' does not have 2 dimensions', FATAL)
+  allocate(dimnames_y(ndims_y))
+  call get_variable_dimension_names(fileobj,'y', dimnames_y)
+  allocate(dimsizes_y(ndims_y))
+  do n=1,ndims_y
+     call get_dimension_size(fileobj,dimnames_y(n),dimsizes_y(n))
+     ! verify that y and x have the same array shape
+     if (dimsizes_y(n) .NE. dimsizes_x(n)) then
+        call error_mesg('xgrid_mod', &
+       'input variables "y" and "x" in file '//trim(grid_file)//' have different array shapes.', FATAL)
+     endif 
+  enddo
+
   if( mod(nlon,2) .NE. 0) call error_mesg('xgrid_mod',  &
        'flux_exchange_mod: atmos supergrid longitude size can not be divided by 2', FATAL)
   if( mod(nlat,2) .NE. 0) call error_mesg('xgrid_mod',  &
@@ -1403,13 +1434,36 @@ subroutine get_grid_version2(grid, grid_id, grid_file)
   if( grid_id == 'LND' .or. grid_id == 'ATM'  .or. grid_id == 'WAV' ) then
      isc2 = 2*grid%is_me-1; iec2 = 2*grid%ie_me+1
      jsc2 = 2*grid%js_me-1; jec2 = 2*grid%je_me+1
-     allocate(tmpx(isc2:iec2, jsc2:jec2) )
-     allocate(tmpy(isc2:iec2, jsc2:jec2) )   
-     start = 1; nread = 1          
-     start(1) = isc2; nread(1) = iec2 - isc2 + 1
-     start(2) = jsc2; nread(2) = jec2 - jsc2 + 1 
+
+     ! throw a fatal if x and y arrays are square, and start,end index values 
+     !for corresponding dimensions are not identical
+     if (dimsizes_x(1) .EQ. dimsizes_x(2)) then
+        if ((isc2 .NE. jsc2) .or. (iec2 .NE. jec2)) then
+           call error_mesg('xgrid_mod', &
+               'x and y arrays are square, but the array start,end indices for the dimensions are not identical. '//&
+               'This may lead to incorrect indexing if the dimensions are ordered'//&
+               ' ny,nx (j,i) instead of nx,ny (i,j).', FATAL)
+        endif
+     endif
+
+     allocate(tmpx(dimsizes_x(1),dimsizes_x(2)))
+     allocate(tmpy(dimsizes_y(1),dimsizes_y(2)))
+
+     start = 1; nread = 1
+     ! assign isc, jsc index ranges to the correct variable dimensions
+     if ((scan(dimnames_x(1),'x') .NE. 0) .and. (scan(dimnames_x(2),'y') .NE. 0)) then    
+        start(1) = isc2; nread(1) = iec2 - isc2 + 1
+        start(2) = jsc2; nread(2) = jec2 - jsc2 + 1
+     elseif ((scan(dimnames_x(2),'x') .NE. 0) .and. (scan(dimnames_x(1),'y') .NE. 0)) then
+        start(1) = jsc2; nread(1) = jec2 - jsc2 + 1
+        start(2) = isc2; nread(2) = iec2 - isc2 + 1
+     else
+        call error_mesg('xgrid_mod', &
+       'Mismatch between array start, end indices and the shapes of the x and y arrays.', FATAL)
+     endif 
      call read_data(fileobj, 'x', tmpx, corner=start, edge_lengths=nread)
-     call read_data(fileobj, 'y', tmpy, corner=start, edge_lengths=nread)      
+     call read_data(fileobj, 'y', tmpy, corner=start, edge_lengths=nread)
+      
      if(is_lat_lon(tmpx, tmpy) ) then
         deallocate(tmpx, tmpy)
         start = 1; nread = 1
@@ -1443,7 +1497,10 @@ subroutine get_grid_version2(grid, grid_id, grid_file)
         call mpp_update_domains(grid%geolat, grid%domain)
         grid%is_latlon = .false.
      end if
+
      deallocate(tmpx, tmpy)
+     deallocate(dimnames_x,dimnames_y, dimsizes_x, dimsizes_y)
+
   end if
 
   call close_file(fileobj)
