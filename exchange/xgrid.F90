@@ -162,6 +162,8 @@ use fms2_io_mod,         only: FmsNetcdfFile_t, open_file, variable_exists, clos
 use fms2_io_mod,         only: FmsNetcdfDomainFile_t, read_data, get_dimension_size
 use fms2_io_mod,         only: get_variable_units, get_variable_dimension_names
 use fms2_io_mod,         only: get_variable_num_dimensions
+use fms2_io_mod,         only: get_compute_domain_dimension_indices, get_global_io_domain_indices
+
 
 implicit none
 private
@@ -1391,7 +1393,9 @@ subroutine get_grid_version2(grid, grid_id, grid_file)
 
   d2r = PI/180.0
 
-  call mpp_get_compute_domain(grid%domain, is, ie, js, je)
+  ! call mpp_get_compute_domain(grid%domain, is, ie, js, je)
+  call get_compute_domain_dimension_indices(fileobj,'nx', /is,ie/)
+  call get_compute_domain_dimension_indices(fileobj,'ny', /js,je/)
 
   call get_dimension_size(fileobj, 'nx', nlon)
   call get_dimension_size(fileobj, 'ny', nlat)
@@ -1446,28 +1450,27 @@ subroutine get_grid_version2(grid, grid_id, grid_file)
         endif
      endif
 
+     
      start = 1; nread = 1
      ! assign isc2,iec2,jsc2,jec2 to the correct variable dimensions
      if ((scan(dimnames_x(1),'x') .NE. 0) .and. (scan(dimnames_x(2),'y') .NE. 0)) then    
         start(1) = isc2; nread(1) = iec2 - isc2 + 1
         start(2) = jsc2; nread(2) = jec2 - jsc2 + 1
-          
-        allocate(tmpx(isc2:iec2,jsc2:jec2))
-        allocate(tmpy(isc2:iec2,jsc2:jec2))
+
      elseif ((scan(dimnames_x(2),'x') .NE. 0) .and. (scan(dimnames_x(1),'y') .NE. 0)) then
         start(1) = jsc2; nread(1) = jec2 - jsc2 + 1
         start(2) = isc2; nread(2) = iec2 - isc2 + 1
-
-        allocate(tmpx(jsc2:jec2,isc2:iec2))
-        allocate(tmpy(jsc2:jec2,isc2:iec2))
      else
         call error_mesg('xgrid_mod', &
        'Mismatch between array start, end indices and the shapes of the x and y arrays.', FATAL)
      endif
    
+     allocate(tmpx(nread(1),nread(2)))
+     allocate(tmpy(nread(1),nread(2)))
+
      call read_data(fileobj, 'x', tmpx, corner=start, edge_lengths=nread)
-     call read_data(fileobj, 'y', tmpy, corner=start, edge_lengths=nread)
-      
+     call read_data(fileobj, 'y', tmpy, corner=start, edge_lengths=nread) 
+     
      if(is_lat_lon(tmpx, tmpy) ) then
         deallocate(tmpx, tmpy)
         start = 1; nread = 1
