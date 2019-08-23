@@ -1446,21 +1446,25 @@ subroutine get_grid_version2(grid, grid_id, grid_file)
         endif
      endif
 
-     allocate(tmpx(dimsizes_x(1),dimsizes_x(2)))
-     allocate(tmpy(dimsizes_y(1),dimsizes_y(2)))
-
      start = 1; nread = 1
-     ! assign isc, jsc index ranges to the correct variable dimensions
+     ! assign isc2,iec2,jsc2,jec2 to the correct variable dimensions
      if ((scan(dimnames_x(1),'x') .NE. 0) .and. (scan(dimnames_x(2),'y') .NE. 0)) then    
         start(1) = isc2; nread(1) = iec2 - isc2 + 1
         start(2) = jsc2; nread(2) = jec2 - jsc2 + 1
+          
+        allocate(tmpx(isc2:iec2,jsc2:jec2))
+        allocate(tmpy(isc2:iec2,jsc2:jec2))
      elseif ((scan(dimnames_x(2),'x') .NE. 0) .and. (scan(dimnames_x(1),'y') .NE. 0)) then
         start(1) = jsc2; nread(1) = jec2 - jsc2 + 1
         start(2) = isc2; nread(2) = iec2 - isc2 + 1
+
+        allocate(tmpx(jsc2:jec2,isc2:iec2))
+        allocate(tmpy(jsc2:jec2,isc2:iec2))
      else
         call error_mesg('xgrid_mod', &
        'Mismatch between array start, end indices and the shapes of the x and y arrays.', FATAL)
-     endif 
+     endif
+   
      call read_data(fileobj, 'x', tmpx, corner=start, edge_lengths=nread)
      call read_data(fileobj, 'y', tmpy, corner=start, edge_lengths=nread)
       
