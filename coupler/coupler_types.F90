@@ -26,6 +26,8 @@ module coupler_types_mod
   use fms_mod,           only: write_version_number
   use fms_io_mod,        only: restart_file_type, register_restart_field
   use fms_io_mod,        only: query_initialized, restore_state
+  use fms2_io_mod,       only: fms2_register_restart_field=>register_restart_field, check_if_open, &
+                               open_file, FmsNetcdfDomainFile_t
   use time_manager_mod,  only: time_type
   use diag_manager_mod,  only: register_diag_field, send_data
   use data_override_mod, only: data_override
@@ -274,6 +276,7 @@ module coupler_types_mod
   interface coupler_type_register_restarts
     module procedure CT_register_restarts_2d, CT_register_restarts_3d
     module procedure CT_register_restarts_to_file_2d, CT_register_restarts_to_file_3d
+    module procedure CT_register_restarts_to_file_2d_new_io, CT_register_restarts_to_file_3d_new_io
   end interface coupler_type_register_restarts
 
   !> This is the interface to read in the fields in a coupler_bc_type that have
@@ -3085,7 +3088,7 @@ contains
   !! specified in the field table.
   subroutine CT_register_restarts_2d(var, bc_rest_files, num_rest_files, mpp_domain, ocean_restart)
     type(coupler_2d_bc_type), intent(inout) :: var  !< BC_type structure to be registered for restarts
-    type(restart_file_type),  dimension(:), pointer :: bc_rest_files !< Structures describing the restart files
+    type(restart_file_type),  dimension(:), pointer, optional :: bc_rest_files !< Structures describing the restart files
     integer,                  intent(out) :: num_rest_files !< The number of restart files to use
     type(domain2D),           intent(in)  :: mpp_domain     !< The FMS domain to use for this registration call
     logical,        optional, intent(in)  :: ocean_restart  !< If true, use the ocean restart file name.
@@ -3167,6 +3170,46 @@ contains
       enddo
     enddo
   end subroutine CT_register_restarts_to_file_2d
+
+  !! Register the fields in a coupler_2d_bc_type to be saved to restart files using new IO interfaces
+  !!
+  !! This subroutine  registers the  fields in  a coupler_2d_bc_type  to be  saved in  the specified
+  !! restart file.
+  subroutine CT_register_restarts_to_file_2d_new_io(var, fileobj, nc_mode, file_name, mpp_domain, varname_prefix)
+    type(coupler_2d_bc_type), intent(inout) :: var  !< BC_type structure to be registered for restarts
+    type(FmsNetcdfDomainFile_t), pointer, intent(in) :: fileobj !< netCDF file object for a domain-decomposed file
+    character(len=*), intent(in) :: nc_mode !< read/write/overwrite/append
+    character(len=*),         intent(in)    :: file_name !< The name of the restart file
+    type(domain2D),           intent(in)    :: mpp_domain !< The FMS domain to use for this registration call
+    character(len=*), optional, intent(in)  :: varname_prefix !< A prefix for the variable name
+                                                         !! in the restart file, intended to allow
+                                                         !! multiple BC_type variables to use the
+                                                         !! same restart files.
+
+    character(len=128) :: var_name
+    integer :: n, m
+    logical :: file_open_success ! if .true., the netCDF file was opened
+
+    ! open the netCDF file if necessary
+    if (.not.(check_if_open(fileobj))) then
+      file_open_success=open_file(fileobj, trim(file_name), trim(nc_mode), mpp_domain, &
+                                       is_restart=.true.)
+      if (.not.(file_open_success)) call mpp_error(FATAL, &
+            & "CT_register_restarts_to_file_2d: unable to open file "//trim(file_name))
+    endif
+    ! Register the fields with the restart file
+    do n = 1, var%num_bcs
+      if (var%bc(n)%num_fields <= 0) cycle
+
+      do m = 1, var%bc(n)%num_fields
+        var_name = trim(var%bc(n)%field(m)%name)
+        if (present(varname_prefix)) var_name = trim(varname_prefix)//trim(var_name)
+
+        call fms2_register_restart_field(fileobj, trim(var_name), &
+                                    var%bc(n)%field(m)%values)
+      enddo
+    enddo
+  end subroutine CT_register_restarts_to_file_2d_new_io
 
   !! Register the fields in a coupler_3d_bc_type to be saved to restart files
   !!
@@ -3254,6 +3297,45 @@ contains
       enddo
     enddo
   end subroutine CT_register_restarts_to_file_3d
+
+  !> Register the fields in a coupler_3d_bc_type to be saved to restart files using the new IO interfaces
+  !!
+  !! Registers the fields in a coupler_3d_bc_type to be saved in the specified restart file.
+  subroutine CT_register_restarts_to_file_3d_new_io(var, fileobj, nc_mode, file_name, mpp_domain, varname_prefix)
+    type(coupler_3d_bc_type), intent(inout) :: var  !< BC_type structure to be registered for restarts
+    type(FmsNetcdfDomainFile_t), pointer, intent(in) :: fileobj !< netCDF file object for a domain-decomposed file
+    character(len=*), intent(in) :: nc_mode !< read/write/overwrite/append
+    character(len=*),         intent(in)  :: file_name !< The name of the restart file
+    type(domain2D),           intent(in)  :: mpp_domain !< The FMS domain to use for this registration call
+    character(len=*), optional, intent(in)  :: varname_prefix !< A prefix for the variable name
+                                                    !! in the restart file, intended to allow
+                                                    !! multiple BC_type variables to use the
+                                                    !! same restart files.
+
+    character(len=128) :: var_name
+    integer :: n, m
+    logical :: file_open_success ! if .true., the netCDF file was opened
+
+    ! Open the netCDF file if necessary
+    if (.not.(check_if_open(fileobj))) then
+      file_open_success=open_file(fileobj, trim(file_name), trim(nc_mode), mpp_domain, &
+                                       is_restart=.true.)
+      if (.not.(file_open_success)) call mpp_error(FATAL, &
+            & "CT_register_restarts_to_file_3d: unable to open file "//trim(file_name))
+    endif
+    ! Register the fields with the restart file
+    do n = 1, var%num_bcs
+      if (var%bc(n)%num_fields <= 0) cycle
+
+      do m = 1, var%bc(n)%num_fields
+        var_name = trim(var%bc(n)%field(m)%name)
+        if (present(varname_prefix)) var_name = trim(varname_prefix)//trim(var_name)
+
+        call fms2_register_restart_field(fileobj, trim(var_name), &
+                                    var%bc(n)%field(m)%values)
+      enddo
+    enddo
+  end subroutine CT_register_restarts_to_file_3d_new_io
 
 
   !> Reads in fields from restart files into a coupler_2d_bc_type
