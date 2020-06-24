@@ -31,4 +31,4 @@
 printf "EOF\n&dummy\nEOF" | cat > input.nml
 
 # run the tests
-run_test test_io_simple 6 
+run_test test_io_simple 6 skip
