@@ -40,49 +40,49 @@ public :: test_symmetric_read_write, test_symmetric_read_write_OG
 contains
 !> Create an array, write it to a netcdf file, read it back in on the supergrid domain
 !! and check that the values are correct
-subroutine test_symmetric_read_write(HI, SGdom)
+subroutine test_symmetric_read_write(HI, G, SGdom)
   type(hor_index_type), intent(in) :: HI !< structure with the horizontal index information
-  type(MOM_domain_type), intent(in) :: SGdom ! supergrid domain
+  type(MOM_domain_type), intent(in) :: G ! regular domain
+  type(MOM_domain_type), intent(inout) :: SGdom ! supergrid domain
   ! local
   type(FmsNetcdfDomainFile_t) :: fileobj ! netdf file object
-  real, dimension(2*HI%isd-2:2*HI%ied+1,2*HI%jsd-2:2*HI%jed+1) :: tmpA
-  real, allocatable :: tmpB(:,:)
-  integer :: ni, nj, dimsize_x, dimsize_y, i, j
+  real, dimension(2*HI%isd-2:2*HI%ied+1,2*HI%jsd-2:2*HI%jed+1) :: tmpB
+  real, dimension(HI%isd:HI%isd,HI%jsd:HI%jed) :: geoLonT
+  real, allocatable :: tmpA(:,:)
+  integer :: ni, nj, dimsize_x, dimsize_y, i, j, i2, j2
   character(len=10) :: nc_mode, nc_file_type
   logical :: file_open_success
-  integer :: ncchksz = 1024*64
-  integer :: header_buffer_val = 16384
+  type(domain2d), pointer :: io_domain
 
-  ni = 2*(HI%iec-HI%isc+1) ! i size of supergrid
-  nj = 2*(HI%jec-HI%jsc+1) ! j size of supergrid
+  !Get the sizes of the global I/O domain and allocate buffer.
+  io_domain => mpp_get_io_domain(SGdom%mpp_domain)
 
+  call mpp_get_global_domain(io_domain, xsize=ni, ysize=nj, position=CORNER)
+  if (.not.(allocated(tmpA))) allocate(tmpA(ni, nj))
   tmpA = 999.0
-  ! generate a data array
-  call random_number(tmpA)
-  ! write the array to a file
-  nc_file_type = "64bit"
-  nc_mode = "write"
-  if (file_exists("some_data.nc")) nc_mode = "overwrite"
-  if (.not.(check_if_open(fileobj))) &
-    file_open_success = open_file(fileobj, "./some_data.nc", trim(nc_mode), SGdom%mpp_domain, is_restart=.false.)
-  call register_axis(fileobj, 'nxp', 'x', domain_position=EAST)
-  call register_axis(fileobj, 'nyp', 'y', domain_position=NORTH)
-  call register_field(fileobj, 'x', "double", dimensions=(/'nxp', 'nyp'/))
-  call write_data(fileobj, 'x', tmpA)
-  if (check_if_open(fileobj)) call close_file(fileobj)
-
+  ! write array to a netcdf file
+  if (.not.(file_exists("some_data.nc"))) call write_2darray_to_ncfile(tmpA, SGdom)
   ! read in the array
-  allocate(tmpB(size(tmpA,1),size(tmpA,2)))
   tmpB(:,:) = 999.0
   if (.not.(check_if_open(fileobj))) &
     file_open_success = open_file(fileobj, "some_data.nc", "read", SGdom%mpp_domain, is_restart=.false.)
-  call get_dimension_size(fileobj, 'nxp', dimsize_x)
-  call get_dimension_size(fileobj, 'nyp', dimsize_y)
+  !call get_dimension_size(fileobj, 'nxp', dimsize_x)
+  !call get_dimension_size(fileobj, 'nyp', dimsize_y)
   call register_axis(fileobj, 'nxp', 'x', domain_position=EAST)
   call register_axis(fileobj, 'nyp', 'y', domain_position=NORTH)
   call read_data(fileobj,'x', tmpB)
+  if (check_if_open(fileobj)) call close_file(fileobj)
 
-  if (allocated(tmpB)) deallocate(tmpB)
+  ! post process array and transfer every other value geoLonT
+  geoLonT(:,:) = 0.0
+  call pass_var_2d(tmpB, SGdom, position=CORNER)
+  call extrapolate_metric(tmpB,2*(HI%jsc-HI%jsd)+2, missing=999.0)
+  do j=HI%jsd,HI%jed ; do i=HI%isd,HI%ied ; i2 = 2*i ; j2 = 2*j
+    geoLonT(i,j) = tmpB(i2-1,j2-1)
+  enddo ; enddo
+
+  if (allocated(tmpA)) deallocate(tmpA)
+  if (associated(io_domain)) nullify(io_domain)
 end subroutine test_symmetric_read_write
 
 !> Create an array, write it to a netcdf file, read it back in on the supergrid domain
@@ -104,60 +104,14 @@ subroutine test_symmetric_read_write_OG(HI, G, SGdom)
   logical :: file_open_success
   integer(kind=int64) :: out_chksum, in_chksum
   type(domain2d), pointer :: io_domain
-  integer :: min_pe_isc
-  integer :: min_pe_jsc
-  integer, dimension(:), allocatable :: pe_icsize
-  integer, dimension(:), allocatable :: pe_iec
-  integer, dimension(:), allocatable :: pe_isc
-  integer, dimension(:), allocatable :: pe_jcsize
-  integer, dimension(:), allocatable :: pe_jec
-  integer, dimension(:), allocatable :: pe_jsc
-  integer :: xc_size
-  integer :: xdim_index
-  integer :: xpos
-  integer :: ydim_index
-  integer :: ypos
-  integer :: yc_size
-  real(kind=real64), dimension(:,:), allocatable :: buf_real64
-  integer, allocatable :: pelist(:)
-  logical :: buffer_includes_halos
 
-  !Get the sizes of the I/O compute domain and allocate buffer.
+  !Get the sizes of the global I/O domain and allocate buffer.
   io_domain => mpp_get_io_domain(SGdom%mpp_domain)
-  !if (.not. associated(io_domain)) then
-  !  call mpp_error(fatal, "I/O domain is not associated.")
-  !endif
   call mpp_get_global_domain(io_domain, xsize=ni, ysize=nj, position=CORNER)
-  allocate(tmpA(ni, nj))
+  if (.not.(allocated(tmpA))) allocate(tmpA(ni, nj))
   tmpA = 999.0
-  write(*,'(A,I2,A,I2)'), "tmpA shape is ", size(tmpA,1), " ", size(tmpA,2)
-  ! generate a data array 
-  call random_number(tmpA)
-  allocate(nxp(ni))
-  allocate(nyp(nj))
-  k=0.0
-  do i=1,ni
-    k=k+1.0
-    nxp(i)=k
- !   write(*,'(A,I2,A,F5.2)'), "index is ",i," nxp is ", nxp(i)
-  enddo
-  k=0.0
-  do i=1,nj
-    k=k+2.0
-    nyp(i)=k
-  !  write(*,'(A,I2,A,F5.2)'), "index is ",i," nyp is ", nyp(i)
-  enddo
-  ! write the array to a file
-! write the array to a file
-  nc_mode = "write"
-  if (file_exists("some_data.nc")) nc_mode = "overwrite"
-  if (.not.(check_if_open(fileobj))) &
-    file_open_success = open_file(fileobj, "./some_data.nc", trim(nc_mode), SGdom%mpp_domain, is_restart=.false.)
-  call register_axis(fileobj, 'nxp', 'x', domain_position=EAST)
-  call register_axis(fileobj, 'nyp', 'y', domain_position=NORTH)
-  call register_field(fileobj, 'nxp', 'double', dimensions=(/'nxp'/))
-  call register_field(fileobj, 'nyp', 'double', dimensions=(/'nyp'/))
-  call register_field(fileobj, 'x', "double", dimensions=(/'nxp', 'nyp'/))
+  ! write the data
+  if (.not.(file_exists("some_data.nc"))) call write_2darray_to_ncfile(tmpA,SGdom)
   !call mpp_get_data_domain(SGdom%mpp_domain, xbegin=isg, xend=ieg, ybegin=jsg, yend=jeg, position=CORNER)
   !call mpp_get_compute_domain(SGdom%mpp_domain, xbegin=isc, xend=iec, ybegin=jsc, yend=jec, position=CORNER)
   !write(*,'(A,I2,A,I2,A,I2,A, I2)'), "isg, ieg, jsg, jeg",isg," ", ieg, " ", jsg, " ", jeg
@@ -166,21 +120,15 @@ subroutine test_symmetric_read_write_OG(HI, G, SGdom)
   !je = jec - jsg + 1
   !is = isc - isg + 1
   !js = jsc - jsg + 1
-  call get_global_io_domain_indices(fileobj, 'nxp', is,ie)
-  call get_global_io_domain_indices(fileobj, 'nyp', js,je)
-  call write_data(fileobj, 'nxp', nxp)
-  call write_data(fileobj, 'nyp', nyp)
-  call write_data(fileobj, 'x', tmpA)
-  if (check_if_open(fileobj)) call close_file(fileobj)
   out_chksum = mpp_chksum(tmpA, pelist=(/mpp_pe()/))
-  ! read in the data
-  
+  ! allocate an array that is the same size as tmpC, but not indexed with domain scheme
   if (.not.(allocated(tmpB))) allocate(tmpB(size(tmpC,1),size(tmpC,2)))
   write(*,'(A,I2,A,I2)'), "tmpB shape is ", size(tmpB,1), " ", size(tmpB,2)
   tmpB(:,:) = 999.0; tmpC=999.0
+  ! read in the data using fms_io
   call old_read_data("./some_data.nc", 'x', tmpC, SGdom%mpp_domain, position=CORNER)
   if (check_if_open(fileobj)) call close_file(fileobj)
-
+  ! post process array and transfer every other value geoLonT
   geoLonT(:,:) = 0.0
   call pass_var_2d(tmpC, SGdom, position=CORNER)
   call extrapolate_metric(tmpC, 2*(HI%jsc-HI%jsd)+2, missing=999.0)
@@ -188,67 +136,6 @@ subroutine test_symmetric_read_write_OG(HI, G, SGdom)
     geoLonT(i,j) = tmpC(i2-1,j2-1)
   enddo ; enddo
 
-
-
-  if (mpp_pe() .eq. mpp_root_pe()) &
-    write(output_unit, '(A)'), "output array"
-  
-    do j=1,size(tmpA,2)
-      write(output_unit,'(9F8.6)') (tmpA(i,j), i=1,size(tmpA,1))
-    enddo
-  xdim_index=1; ydim_index=2
-  c(:) = 1
-  e(:) = shape(geoLonT)
-  buffer_includes_halos = .true.
-  if (.not.(allocated(pelist))) allocate(pelist(mpp_npes()))
-  call mpp_get_current_pelist(pelist)
-  call mpp_get_data_domain(io_domain, xbegin=isd, xsize=xd_size, position=EAST)
-  call mpp_get_data_domain(io_domain, ybegin=jsd, ysize=yd_size, position=NORTH)
-!I/O root gathers the data and writes it.
-  if (mpp_pe() .eq. mpp_root_pe()) then
-    allocate(pe_isc(size(pelist)))
-    allocate(pe_icsize(size(pelist)))
-    allocate(pe_jsc(size(pelist)))
-    allocate(pe_jcsize(size(pelist)))
-    call mpp_get_compute_domains(io_domain, xbegin=pe_isc, xsize=pe_icsize, position=EAST)
-    call mpp_get_compute_domains(io_domain, ybegin=pe_jsc, ysize=pe_jcsize, position=NORTH)
-    do i = 1, size(pelist)
-      c(xdim_index) = pe_isc(i)
-      c(ydim_index) = pe_jsc(i)
-      if (fileobj%adjust_indices) then
-        c(xdim_index) = c(xdim_index) - pe_isc(1) + 1
-        c(ydim_index) = c(ydim_index) - pe_jsc(1) + 1
-      endif
-      e(xdim_index) = pe_icsize(i)
-      e(ydim_index) = pe_jcsize(i)
-    
-      if (.not.(allocated(buf_real64))) allocate(buf_real64(e(1),e(2)))
-      if (i .eq. 1) then
-        !Root rank stores data directly.
-        if (buffer_includes_halos) then
-          !Adjust if the input buffer has room for halos.
-           c(xdim_index) = isc - isd + 1
-           c(ydim_index) = jsc - jsd + 1
-        else
-           c(xdim_index) = 1
-           c(ydim_index) = 1
-        endif
-        call put_array_section_real64_2d(geoLonT,buf_real64, c, e)
-        write(output_unit, '(A)'), "geoLonT"
-        do j2=e(1),e(2)
-          write(output_unit,'(5F8.6)') (buf_real64(i2,j2), i2=c(1),c(2))
-        enddo
-      else
-        !Send data to non-root ranks.
-        call mpp_send(buf_real64, size(buf_real64), pelist(i))
-        call mpp_sync_self(check=EVENT_SEND)
-      endif
-    enddo
-    deallocate(pe_isc)
-    deallocate(pe_icsize)
-    deallocate(pe_jsc)
-    deallocate(pe_jcsize)
-  endif
 
     !write(output_unit, '(A)'), "geoLonT
   
@@ -261,14 +148,52 @@ subroutine test_symmetric_read_write_OG(HI, G, SGdom)
 
   !if (in_chksum .ne. out_chksum) call mpp_error(FATAL, &
    ! "read_write_OG: variable x read checksum does not match write checksum")
-  if (allocated(pelist)) deallocate(pelist)
-  if (allocated(buf_real64)) deallocate(buf_real64)
   if (allocated(tmpA)) deallocate(tmpA)
   if (allocated(tmpB)) deallocate(tmpB)
   if (allocated(nxp)) deallocate(nxp)
   if (allocated(nyp)) deallocate(nyp)
   if (associated(io_domain)) nullify(io_domain)
 end subroutine test_symmetric_read_write_OG
+
+subroutine write_2darray_to_ncfile(array, MOM_domain)
+  real, dimension(:,:), intent(inout) :: array ! 2d array of values to write to the file
+  type(MOM_domain_type), intent(in) :: MOM_domain ! MOM domain structure
+  ! local
+  type(FmsNetcdfDomainFile_t) :: fileobj ! netdf file object
+  character(len=10) :: nc_mode, nc_file_type
+  logical :: file_open_success
+  integer :: i, k, ni, nj 
+  integer, allocatable, dimension(:) :: nxp, nyp
+  ! generate the data
+  call random_number(array)
+  ! create the axes
+  allocate(nxp(ni))
+  allocate(nyp(nj))
+  k=0.0
+  do i=1,ni
+    k=k+1.0
+    nxp(i)=k
+ !   write(output_unit,'(A,I2,A,F5.2)'), "index is ",i," nxp is ", nxp(i)
+  enddo
+  k=0.0
+  do i=1,nj
+    k=k+2.0
+    nyp(i)=k
+  !  write(output_unit,'(A,I2,A,F5.2)'), "index is ",i," nyp is ", nyp(i)
+  enddo
+  ! write the array to a file
+  nc_file_type = "64bit"
+  nc_mode = "write"
+  if (file_exists("some_data.nc")) nc_mode = "overwrite"
+  if (.not.(check_if_open(fileobj))) &
+    file_open_success = open_file(fileobj, "./some_data.nc", trim(nc_mode), MOM_domain%mpp_domain, is_restart=.false.)
+  call register_axis(fileobj, 'nxp', 'x', domain_position=EAST)
+  call register_axis(fileobj, 'nyp', 'y', domain_position=NORTH)
+  call register_field(fileobj, 'x', "double", dimensions=(/'nxp', 'nyp'/))
+  call write_data(fileobj, 'x', array)
+  if (check_if_open(fileobj)) call close_file(fileobj)
+
+end subroutine write_2darray_to_ncfile
 
 !> Extrapolates missing metric data into all the halo regions.
 subroutine extrapolate_metric(var, jh, missing)
