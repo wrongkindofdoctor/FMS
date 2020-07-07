@@ -28,10 +28,6 @@
 . ../test_common.sh
 
 # run the tests
-run_test test_io_supergrid 4 || err=1
-if [ "$err" -ne 1 ]; then
-  echo "ERROR: test_io_supergrid FAILED."
-  exit 3
-else
-  echo "test_io_supergrid PASSED. YAAAASSSS!"
-fi
+run_test test_io_supergrid 4
+
+echo "test_io_supergrid Finished. YAAAASSSS!"

@@ -36,73 +36,26 @@ use supergrid_setup, only : MOM_domain_type, hor_index_type
 
 implicit none
 
-public :: test_symmetric_read_write, test_symmetric_read_write_OG
+public :: test_symmetric_read_write
 contains
-!> Create an array, write it to a netcdf file, read it back in on the supergrid domain
-!! and check that the values are correct
+!> Create an array, write it to a netcdf file, read it back in on the supergrid domain using fms_io
+!! and fms2_io read_data interfaces, and check that the post-processed array from the new IO
+!! matches the post-processed array from the old IO
 subroutine test_symmetric_read_write(HI, G, SGdom)
   type(hor_index_type), intent(in) :: HI !< structure with the horizontal index information
   type(MOM_domain_type), intent(in) :: G ! regular domain
   type(MOM_domain_type), intent(inout) :: SGdom ! supergrid domain
   ! local
   type(FmsNetcdfDomainFile_t) :: fileobj ! netdf file object
-  real, dimension(2*HI%isd-2:2*HI%ied+1,2*HI%jsd-2:2*HI%jed+1) :: tmpB
-  real, dimension(HI%isd:HI%isd,HI%jsd:HI%jed) :: geoLonT
+  real, dimension(2*HI%isd-3:2*HI%ied+1,2*HI%jsd-3:2*HI%jed+1) :: tmpC, tmpB
+  real, dimension(HI%isd:HI%isd,HI%jsd:HI%jed) :: geoLonT, geoLonT_new
   real, allocatable :: tmpA(:,:)
-  integer :: ni, nj, dimsize_x, dimsize_y, i, j, i2, j2
-  character(len=10) :: nc_mode, nc_file_type
-  logical :: file_open_success
-  type(domain2d), pointer :: io_domain
-
-  !Get the sizes of the global I/O domain and allocate buffer.
-  io_domain => mpp_get_io_domain(SGdom%mpp_domain)
-
-  call mpp_get_global_domain(io_domain, xsize=ni, ysize=nj, position=CORNER)
-  if (.not.(allocated(tmpA))) allocate(tmpA(ni, nj))
-  tmpA = 999.0
-  ! write array to a netcdf file
-  if (.not.(file_exists("some_data.nc"))) call write_2darray_to_ncfile(tmpA, SGdom)
-  ! read in the array
-  tmpB(:,:) = 999.0
-  if (.not.(check_if_open(fileobj))) &
-    file_open_success = open_file(fileobj, "some_data.nc", "read", SGdom%mpp_domain, is_restart=.false.)
-  !call get_dimension_size(fileobj, 'nxp', dimsize_x)
-  !call get_dimension_size(fileobj, 'nyp', dimsize_y)
-  call register_axis(fileobj, 'nxp', 'x', domain_position=EAST)
-  call register_axis(fileobj, 'nyp', 'y', domain_position=NORTH)
-  call read_data(fileobj,'x', tmpB)
-  if (check_if_open(fileobj)) call close_file(fileobj)
-
-  ! post process array and transfer every other value geoLonT
-  geoLonT(:,:) = 0.0
-  call pass_var_2d(tmpB, SGdom, position=CORNER)
-  call extrapolate_metric(tmpB,2*(HI%jsc-HI%jsd)+2, missing=999.0)
-  do j=HI%jsd,HI%jed ; do i=HI%isd,HI%ied ; i2 = 2*i ; j2 = 2*j
-    geoLonT(i,j) = tmpB(i2-1,j2-1)
-  enddo ; enddo
-
-  if (allocated(tmpA)) deallocate(tmpA)
-  if (associated(io_domain)) nullify(io_domain)
-end subroutine test_symmetric_read_write
-
-!> Create an array, write it to a netcdf file, read it back in on the supergrid domain
-!! and check that the values are correct using original mpp_read calls
-subroutine test_symmetric_read_write_OG(HI, G, SGdom)
-  type(hor_index_type), intent(in) :: HI !< structure with the horizontal index information
-  type(MOM_domain_type), intent(in) :: G ! regular domain
-  type(MOM_domain_type), intent(inout) :: SGdom ! supergrid domain
-  ! local
-  type(FmsNetcdfDomainFile_t) :: fileobj ! netdf file object
-  real, dimension(2*HI%isd-3:2*HI%ied+1,2*HI%jsd-3:2*HI%jed+1) :: tmpC
-  real, dimension(HI%isd:HI%isd,HI%jsd:HI%jed) :: geoLonT
-  real, allocatable :: tmpA(:,:), tmpB(:,:)
-  real :: k
   integer :: ni, nj,i2, j2, i, j, isg, ieg, jsg,jeg, isc, iec, jsc, jec, is, ie, js, je
   integer :: c(2), e(2), isd, ied, jsd, jed, xd_size, yd_size
   real, allocatable :: nxp(:), nyp(:)
   character(len=10) :: nc_mode
   logical :: file_open_success
-  integer(kind=int64) :: out_chksum, in_chksum
+  integer(kind=int64) :: old_chksum, new_chksum
   type(domain2d), pointer :: io_domain
 
   !Get the sizes of the global I/O domain and allocate buffer.
@@ -120,22 +73,44 @@ subroutine test_symmetric_read_write_OG(HI, G, SGdom)
   !je = jec - jsg + 1
   !is = isc - isg + 1
   !js = jsc - jsg + 1
-  out_chksum = mpp_chksum(tmpA, pelist=(/mpp_pe()/))
+  !out_chksum = mpp_chksum(tmpA, pelist=(/mpp_pe()/))
   ! allocate an array that is the same size as tmpC, but not indexed with domain scheme
-  if (.not.(allocated(tmpB))) allocate(tmpB(size(tmpC,1),size(tmpC,2)))
-  write(*,'(A,I2,A,I2)'), "tmpB shape is ", size(tmpB,1), " ", size(tmpB,2)
-  tmpB(:,:) = 999.0; tmpC=999.0
-  ! read in the data using fms_io
-  call old_read_data("./some_data.nc", 'x', tmpC, SGdom%mpp_domain, position=CORNER)
+  tmpB(:,:) = 999.0; tmpC(:,:)=999.0
+  ! read in the data using fms_io read_data
+  write(output_unit, '(A,I2,A)'), "PE", mpp_pe()," is reading in data using fms_io"
+  call old_read_data("./some_data.nc", 'x', tmpB, SGdom%mpp_domain, position=CORNER)
+  ! Read in the array using fms2_io read_data
+  if (.not.(check_if_open(fileobj))) &
+    file_open_success = open_file(fileobj, "some_data.nc", "read", SGdom%mpp_domain, is_restart=.false.)
+  !call get_dimension_size(fileobj, 'nxp', dimsize_x)
+  !call get_dimension_size(fileobj, 'nyp', dimsize_y)
+  call register_axis(fileobj, 'nxp', 'x', domain_position=EAST)
+  call register_axis(fileobj, 'nyp', 'y', domain_position=NORTH)
+  write(output_unit, '(A,I2,A)'), "PE", mpp_pe()," is reading in data using fms2_io"
+  call read_data(fileobj,'x', tmpC)
   if (check_if_open(fileobj)) call close_file(fileobj)
-  ! post process array and transfer every other value geoLonT
-  geoLonT(:,:) = 0.0
+  ! compare checksums
+  old_chksum = mpp_chksum(tmpB, pelist=(/mpp_pe()/))
+  new_chksum = mpp_chksum(tmpC, pelist=(/mpp_pe()/))
+  if (new_chksum .ne. old_chksum) call mpp_error(WARNING, &
+    "test_symmetric_read_write: tmpB and tmpC checksums do not match.")
+  ! post process arrays and transfer every other value geoLonT and geoLonT_new
+  geoLonT(:,:) = 0.0; geoLonT_new(:,:) = 0.0
+  call pass_var_2d(tmpB, SGdom, position=CORNER)
+  call extrapolate_metric(tmpB, 2*(HI%jsc-HI%jsd)+2, missing=999.0)
   call pass_var_2d(tmpC, SGdom, position=CORNER)
   call extrapolate_metric(tmpC, 2*(HI%jsc-HI%jsd)+2, missing=999.0)
-  do j=HI%jsd,HI%jed ; do i=HI%isd,HI%ied ; i2 = 2*i ; j2 = 2*j
-    geoLonT(i,j) = tmpC(i2-1,j2-1)
-  enddo ; enddo
 
+  do j=HI%jsd,HI%jed ; do i=HI%isd,HI%ied ; i2 = 2*i ; j2 = 2*j
+    geoLonT(i,j) = tmpB(i2-1,j2-1)
+    geoLonT_new(i,j) = tmpC(i2-1,j2-1)
+    write(output_unit,"(A,F7.5,A,F7.5)"), "geolont, geolont_new ",geoLonT(i,j)," ",geoLonT_new(i,j)
+  enddo ; enddo
+  ! compare checksums
+  old_chksum = mpp_chksum(geoLonT, pelist=(/mpp_pe()/))
+  new_chksum = mpp_chksum(geoLonT_new, pelist=(/mpp_pe()/))
+  if (new_chksum .ne. old_chksum) call mpp_error(WARNING, &
+    "test_symmetric_read_write: geoLonT checksums do not match.")
 
     !write(output_unit, '(A)'), "geoLonT
   
@@ -143,17 +118,11 @@ subroutine test_symmetric_read_write_OG(HI, G, SGdom)
     !  write(output_unit,'(I2)') (geoLonT(i,j), j=1,size(geoLonT,2))
     !enddo
   !endif
-    
-  !in_chksum = mpp_chksum(geoLonT, pelist=(/mpp_pe()/))
-
-  !if (in_chksum .ne. out_chksum) call mpp_error(FATAL, &
-   ! "read_write_OG: variable x read checksum does not match write checksum")
   if (allocated(tmpA)) deallocate(tmpA)
-  if (allocated(tmpB)) deallocate(tmpB)
   if (allocated(nxp)) deallocate(nxp)
   if (allocated(nyp)) deallocate(nyp)
   if (associated(io_domain)) nullify(io_domain)
-end subroutine test_symmetric_read_write_OG
+end subroutine test_symmetric_read_write
 
 subroutine write_2darray_to_ncfile(array, MOM_domain)
   real, dimension(:,:), intent(inout) :: array ! 2d array of values to write to the file

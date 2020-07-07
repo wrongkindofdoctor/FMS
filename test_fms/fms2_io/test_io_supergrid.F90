@@ -30,7 +30,7 @@ use mpp_mod, only : mpp_init, mpp_exit, mpp_npes
 use fms_io_mod, only : fms_io_init, fms_io_exit
 use netcdf_io_mod, only : netcdf_io_init
 use supergrid_setup, only : MOM_domain_type, hor_index_type, domains_init, hor_index_init, create_supergrid_domain
-use supergrid_read_write, only : test_symmetric_read_write, test_symmetric_read_write_OG
+use supergrid_read_write, only : test_symmetric_read_write
 implicit none
 
 type(MOM_domain_type) :: G !< structure with the information for the base domain
@@ -50,7 +50,6 @@ call hor_index_init(G, HI)
 call create_supergrid_domain(G, SGdom)
 call fms_io_init()
 call netcdf_io_init(ncchksz, header_buffer_val, nc_file_type)
-call test_symmetric_read_write_OG(HI, G, SGdom)
 call test_symmetric_read_write(HI,G,SGdom)
 call fms_io_exit()
 call mpp_domains_exit()
