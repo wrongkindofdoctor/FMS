@@ -45,6 +45,7 @@ include/mpp_util_nocomm.inc
 
 # Include .h and .mod files.
 AM_CPPFLAGS = -I${top_srcdir}/include
+AM_CPPFLAGS += -I${top_builddir}/platform
 AM_CPPFLAGS += -I${top_srcdir}/mpp/include
 
 # Build these uninstalled convenience libraries.
